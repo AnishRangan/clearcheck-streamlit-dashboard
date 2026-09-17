@@ -307,3 +307,195 @@ st.info(
     "Timing metrics are risk indicators. Approval timestamps do not "
     "show when a technician opened or began reviewing a case."
 )
+# ============================================================
+# 7. APPROVAL-DURATION DISTRIBUTION
+# ============================================================
+
+st.markdown("---")
+st.header("Approval-Duration Distribution")
+
+st.write(
+    "This section displays the time between consecutive approvals "
+    "for the selected technician(s) and dates."
+)
+
+# Allow the dashboard user to select the definition of a fast approval.
+fast_threshold = st.sidebar.selectbox(
+    "Fast-approval threshold",
+    options=[2, 5, 10, 30, 60],
+    index=2,
+    format_func=lambda value: f"Under {value} seconds"
+)
+
+# Limit the displayed histogram range because the distribution is
+# extremely right-skewed by overnight and between-session gaps.
+histogram_max = st.sidebar.selectbox(
+    "Histogram maximum duration",
+    options=[60, 120, 300, 600],
+    index=0,
+    format_func=lambda value: f"{value} seconds"
+)
+
+# Keep only valid, nonnegative approval durations.
+duration_data = filtered_approvals[
+    filtered_approvals["APPROVAL_DURATION_SEC"].notna()
+    & (filtered_approvals["APPROVAL_DURATION_SEC"] >= 0)
+].copy()
+
+# Label each approval according to the selected threshold.
+duration_data["Approval Category"] = np.where(
+    duration_data["APPROVAL_DURATION_SEC"] < fast_threshold,
+    f"Fast: under {fast_threshold} seconds",
+    f"Other: {fast_threshold} seconds or more"
+)
+
+# The histogram displays only values within the selected range.
+# Records outside this range remain part of the other dashboard calculations.
+histogram_data = duration_data[
+    duration_data["APPROVAL_DURATION_SEC"] <= histogram_max
+].copy()
+
+# Create separate panels for the selected technicians.
+duration_figure = px.histogram(
+    histogram_data,
+    x="APPROVAL_DURATION_SEC",
+    color="Approval Category",
+    facet_col="PROVIDER_APPROVING_NAME",
+    facet_col_wrap=3,
+    nbins=min(int(histogram_max), 100),
+    barmode="stack",
+    opacity=0.85,
+    color_discrete_map={
+        f"Fast: under {fast_threshold} seconds": "#EF553B",
+        f"Other: {fast_threshold} seconds or more": "#636EFA"
+    },
+    labels={
+        "APPROVAL_DURATION_SEC": "Approval Duration (seconds)",
+        "count": "Number of Approvals"
+    },
+    title=(
+        f"Approval Durations Up to {histogram_max} Seconds "
+        f"— Fast Approvals Shown in Red"
+    )
+)
+
+# Shorten the technician labels above each chart.
+duration_figure.for_each_annotation(
+    lambda annotation: annotation.update(
+        text=annotation.text.split("=")[-1]
+    )
+)
+
+# Add the selected fast-approval threshold to each panel.
+duration_figure.add_vline(
+    x=fast_threshold,
+    line_dash="dash",
+    line_color="darkred",
+    line_width=2
+)
+
+duration_figure.update_layout(
+    height=500,
+    legend_title_text="",
+    bargap=0.05
+)
+
+st.plotly_chart(
+    duration_figure,
+    use_container_width=True
+)
+
+excluded_from_histogram = (
+    duration_data["APPROVAL_DURATION_SEC"] > histogram_max
+).sum()
+
+st.caption(
+    f"The chart displays approval gaps from 0 to {histogram_max} seconds. "
+    f"{excluded_from_histogram:,} longer gaps are excluded from the chart "
+    "for readability but remain in the dataset."
+)
+
+# ============================================================
+# 8. FAST-APPROVAL SUMMARY
+# ============================================================
+
+st.subheader(
+    f"Fast-Approval Summary: Under {fast_threshold} Seconds"
+)
+
+fast_summary = (
+    duration_data
+    .groupby("PROVIDER_APPROVING_NAME")
+    .agg(
+        Measured_Approvals=("APPROVAL_DURATION_SEC", "size"),
+        Fast_Approvals=(
+            "APPROVAL_DURATION_SEC",
+            lambda values: (values < fast_threshold).sum()
+        )
+    )
+    .reset_index()
+)
+
+fast_summary["Fast_Approval_Percent"] = (
+    fast_summary["Fast_Approvals"]
+    / fast_summary["Measured_Approvals"]
+    * 100
+)
+
+fast_summary = fast_summary.rename(
+    columns={
+        "PROVIDER_APPROVING_NAME": "Technician",
+        "Measured_Approvals": "Measured Approvals",
+        "Fast_Approvals": "Fast Approvals",
+        "Fast_Approval_Percent": "Fast Approval Percent"
+    }
+)
+
+st.dataframe(
+    fast_summary,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Measured Approvals": st.column_config.NumberColumn(
+            format="%d"
+        ),
+        "Fast Approvals": st.column_config.NumberColumn(
+            format="%d"
+        ),
+        "Fast Approval Percent": st.column_config.NumberColumn(
+            format="%.2f%%"
+        )
+    }
+)
+
+# Show examples of the records classified as fast approvals.
+fast_records = duration_data[
+    duration_data["APPROVAL_DURATION_SEC"] < fast_threshold
+][
+    [
+        "CASE_NUMBER",
+        "PROVIDER_APPROVING_NAME",
+        "APPROVAL_DATE",
+        "APPROVAL_DURATION_SEC"
+    ]
+].sort_values(
+    by=["APPROVAL_DURATION_SEC", "APPROVAL_DATE"]
+)
+
+with st.expander("View highlighted fast-approval records"):
+    st.write(
+        f"{len(fast_records):,} approvals meet the current "
+        f"under-{fast_threshold}-second definition."
+    )
+
+    st.dataframe(
+        fast_records.head(500),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    if len(fast_records) > 500:
+        st.caption(
+            "The first 500 records are displayed to keep the "
+            "dashboard responsive."
+        )

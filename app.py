@@ -206,3 +206,104 @@ st.write(
     f"Filtered records: {len(filtered_approvals):,} approvals "
     f"and {len(filtered_blocks):,} blocks."
 )
+
+# ============================================================
+# 6. CALCULATE DASHBOARD KPIs
+# ============================================================
+
+# Keep only records with measurable approval durations.
+measurable_durations = filtered_approvals[
+    "APPROVAL_DURATION_SEC"
+].dropna()
+
+total_approvals = len(filtered_approvals)
+total_blocks = len(filtered_blocks)
+
+# Calculate the median approval gap.
+median_duration = (
+    measurable_durations.median()
+    if len(measurable_durations) > 0
+    else 0
+)
+
+# Calculate the percentage under 10 seconds.
+under_10_ratio = (
+    (measurable_durations < 10).mean() * 100
+    if len(measurable_durations) > 0
+    else 0
+)
+
+# Calculate the percentage of same-second approvals.
+same_second_ratio = (
+    (measurable_durations == 0).mean() * 100
+    if len(measurable_durations) > 0
+    else 0
+)
+
+# Calculate average cases per block.
+average_cases_per_block = (
+    filtered_blocks["Cases_In_Block"].mean()
+    if total_blocks > 0
+    else 0
+)
+
+# Calculate the weighted observed seconds per case.
+observed_seconds_per_case = (
+    filtered_blocks["Block_Duration_Seconds"].sum()
+    / filtered_blocks["Cases_In_Block"].sum()
+    if (
+        total_blocks > 0
+        and filtered_blocks["Cases_In_Block"].sum() > 0
+    )
+    else 0
+)
+
+
+# ============================================================
+# 7. DISPLAY KPI CARDS
+# ============================================================
+
+st.markdown("## Selected-Data Overview")
+
+kpi_1, kpi_2, kpi_3 = st.columns(3)
+
+kpi_1.metric(
+    label="Total Approvals",
+    value=f"{total_approvals:,}"
+)
+
+kpi_2.metric(
+    label="Median Approval Gap",
+    value=f"{median_duration:.1f} sec"
+)
+
+kpi_3.metric(
+    label="Approvals Under 10 Seconds",
+    value=f"{under_10_ratio:.2f}%"
+)
+
+kpi_4, kpi_5, kpi_6 = st.columns(3)
+
+kpi_4.metric(
+    label="Same-Second Approvals",
+    value=f"{same_second_ratio:.2f}%"
+)
+
+kpi_5.metric(
+    label="Average Cases per Block",
+    value=f"{average_cases_per_block:.2f}"
+)
+
+kpi_6.metric(
+    label="Observed Seconds per Case",
+    value=f"{observed_seconds_per_case:.2f} sec"
+)
+
+st.caption(
+    f"Current selection contains {total_blocks:,} approval blocks."
+)
+
+st.info(
+    "Timing metrics are risk indicators. Approval timestamps do not "
+    "show when a technician opened or began reviewing a case."
+)

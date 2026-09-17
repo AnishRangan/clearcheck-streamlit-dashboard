@@ -102,3 +102,107 @@ st.success(
     f"Data loaded successfully: {len(approvals):,} approval records "
     f"and {len(blocks):,} approval blocks."
 )
+
+# ============================================================
+# 4. SIDEBAR FILTERS
+# ============================================================
+
+st.sidebar.header("Dashboard Filters")
+
+# Create the list of available technicians.
+technician_list = sorted(
+    approvals["PROVIDER_APPROVING_NAME"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+# Allow users to select one or more technicians.
+selected_technicians = st.sidebar.multiselect(
+    "Select technician(s)",
+    options=technician_list,
+    default=technician_list
+)
+
+# Stop the application if no technician is selected.
+if not selected_technicians:
+    st.warning(
+        "Select at least one technician from the sidebar."
+    )
+    st.stop()
+
+# Identify the full date range in the dataset.
+minimum_date = approvals["APPROVAL_DATE"].min().date()
+maximum_date = approvals["APPROVAL_DATE"].max().date()
+
+# Add a date-range filter.
+selected_date_range = st.sidebar.date_input(
+    "Select approval-date range",
+    value=(minimum_date, maximum_date),
+    min_value=minimum_date,
+    max_value=maximum_date
+)
+
+# Use the full date range if only one date is selected.
+if len(selected_date_range) == 2:
+    selected_start_date = selected_date_range[0]
+    selected_end_date = selected_date_range[1]
+
+else:
+    selected_start_date = minimum_date
+    selected_end_date = maximum_date
+
+
+# ============================================================
+# 5. APPLY THE FILTERS
+# ============================================================
+
+filtered_approvals = approvals[
+    approvals["PROVIDER_APPROVING_NAME"].isin(
+        selected_technicians
+    )
+].copy()
+
+filtered_approvals = filtered_approvals[
+    (
+        filtered_approvals["APPROVAL_DATE"].dt.date
+        >= selected_start_date
+    )
+    &
+    (
+        filtered_approvals["APPROVAL_DATE"].dt.date
+        <= selected_end_date
+    )
+].copy()
+
+# Apply the same filters to the block dataset.
+filtered_blocks = blocks[
+    blocks["PROVIDER_APPROVING_NAME"].isin(
+        selected_technicians
+    )
+].copy()
+
+filtered_blocks = filtered_blocks[
+    (
+        filtered_blocks["Block_Start"].dt.date
+        >= selected_start_date
+    )
+    &
+    (
+        filtered_blocks["Block_Start"].dt.date
+        <= selected_end_date
+    )
+].copy()
+
+# Stop if the filters produce no approval records.
+if filtered_approvals.empty:
+    st.warning(
+        "No approval records match the selected filters."
+    )
+    st.stop()
+
+# Temporary confirmation that the filters are working.
+st.write(
+    f"Filtered records: {len(filtered_approvals):,} approvals "
+    f"and {len(filtered_blocks):,} blocks."
+)

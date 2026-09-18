@@ -1161,3 +1161,100 @@ st.warning(
     "records. Therefore, the analysis identifies an association rather "
     "than proving that the payout reduction caused the behavioral change."
 )
+# ============================================================
+# 19. FINAL CASE CONCLUSION
+# ============================================================
+
+st.markdown("---")
+st.header("Overall Case Conclusion")
+
+st.error(
+    "Overall finding: The approval records support serious concern "
+    "about inadequate review behavior—particularly for Gary Arnold—but "
+    "approval timestamps alone cannot conclusively prove negligence."
+)
+
+st.subheader("Assessment by Technician")
+
+conclusion_col_1, conclusion_col_2, conclusion_col_3 = st.columns(3)
+
+with conclusion_col_1:
+    st.markdown("### Gary Arnold")
+    st.write(
+        "Gary presents the strongest risk indicators. His approval "
+        "durations are frequently only a few seconds, rapid approvals "
+        "occur across multiple files and time periods, and many large "
+        "approval blocks allow very little observed time per case."
+    )
+
+with conclusion_col_2:
+    st.markdown("### Juan Mendez")
+    st.write(
+        "Juan generally demonstrates slower approval behavior than Gary "
+        "and Matt. His median approval gap is longer and his proportion "
+        "of extremely fast approvals is substantially lower. He provides "
+        "the strongest comparison against a systematic rapid-approval pattern."
+    )
+
+with conclusion_col_3:
+    st.markdown("### Matt Shawn")
+    st.write(
+        "Matt also demonstrates rapid approval behavior, although it is "
+        "less extreme than Gary's. Conclusions about Matt should be more "
+        "cautious because his records cover only one month and contain "
+        "far fewer approvals."
+    )
+# ============================================================
+# 21. NEGLIGENCE-CLAIM POSITION
+# ============================================================
+
+st.subheader("Position on the Negligence Claim")
+
+st.markdown(
+    """
+    **The analysis supports further investigation of the negligence
+    claim, but it does not independently prove legal negligence.**
+
+    The evidence supports the claim because:
+
+    - Gary has a sustained and unusually high rate of rapid approvals.
+    - Many approvals occur only seconds apart.
+    - The pattern appears across multiple dates and source files.
+    - Large approval blocks often contain too little observed time for a
+      conventional case-by-case review.
+    - Gary's behavior is significantly different from Juan's behavior.
+    - The payout reduction did not produce a meaningful improvement in
+      review timing.
+
+    The evidence does not conclusively prove negligence because:
+
+    - Approval timestamps do not identify when review started.
+    - Technicians may have pre-reviewed some cases.
+    - The dataset contains no review-quality or error measurements.
+    - The dataset includes approvals but no rejected cases.
+    - The technicians have unequal observation periods.
+    - Extremely skewed durations complicate mean-based statistical tests.
+    """
+)
+# ============================================================
+# 22. RECOMMENDATIONS
+# ============================================================
+
+st.subheader("Recommendations")
+st.markdown(
+    """
+    1. **Conduct a targeted quality audit** of Gary's fastest approvals
+       and largest approval blocks.
+
+    2. **Compare approval speed with case outcomes**, including errors,
+       reversals, complaints, security incidents, and failed updates.
+
+    3. **Capture additional event timestamps**, such as case-open time,
+       review-start time, document-view activity, and approval time.
+        """
+)
+st.success(
+    "Recommended decision: escalate Gary's records for detailed audit, "
+    "continue monitoring Matt, and use Juan as a comparative benchmark. "
+    "Gather more evidence before reaching a final legal conclusion."
+)

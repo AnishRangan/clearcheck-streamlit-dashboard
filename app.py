@@ -499,3 +499,141 @@ with st.expander("View highlighted fast-approval records"):
             "The first 500 records are displayed to keep the "
             "dashboard responsive."
         )
+# ============================================================
+# 9. TOP APPROVAL DAYS
+# ============================================================
+
+st.markdown("---")
+st.header("Top Approval Days")
+
+st.write(
+    "This chart identifies the dates with the highest approval volume "
+    "for the selected technician(s) and date range."
+)
+
+# Allow the dashboard user to control how many days are displayed.
+number_of_top_days = st.sidebar.slider(
+    "Number of top approval days",
+    min_value=5,
+    max_value=20,
+    value=10,
+    step=1
+)
+
+# Create an approval-day variable from the full timestamp.
+daily_approval_data = filtered_approvals[
+    filtered_approvals["APPROVAL_DATE"].notna()
+].copy()
+
+daily_approval_data["Approval Day"] = (
+    daily_approval_data["APPROVAL_DATE"].dt.normalize()
+)
+
+# Count approvals for each technician on each day.
+daily_technician_counts = (
+    daily_approval_data
+    .groupby(
+        ["Approval Day", "PROVIDER_APPROVING_NAME"]
+    )
+    .size()
+    .reset_index(name="Approvals")
+)
+
+# Calculate the total approval volume for each day across
+# all currently selected technicians.
+daily_totals = (
+    daily_technician_counts
+    .groupby("Approval Day", as_index=False)["Approvals"]
+    .sum()
+    .sort_values("Approvals", ascending=False)
+    .head(number_of_top_days)
+)
+
+# Keep technician-level information for only the highest-volume days.
+top_day_chart_data = daily_technician_counts[
+    daily_technician_counts["Approval Day"].isin(
+        daily_totals["Approval Day"]
+    )
+].copy()
+
+# Add readable date labels.
+top_day_chart_data["Approval Day Label"] = (
+    top_day_chart_data["Approval Day"].dt.strftime("%B %d, %Y")
+)
+
+# Create the horizontal stacked bar chart.
+top_days_figure = px.bar(
+    top_day_chart_data,
+    x="Approvals",
+    y="Approval Day Label",
+    color="PROVIDER_APPROVING_NAME",
+    orientation="h",
+    barmode="stack",
+    title=f"Top {number_of_top_days} Approval Days",
+    labels={
+        "Approval Day Label": "Approval Date",
+        "PROVIDER_APPROVING_NAME": "Technician"
+    },
+    color_discrete_map={
+        "Gary Arnold": "#EF553B",
+        "Juan Mendez": "#636EFA",
+        "Matt Shawn": "#00CC96"
+    }
+)
+
+# Sort the bars so the highest-volume day appears at the top.
+top_days_figure.update_yaxes(
+    categoryorder="total ascending"
+)
+
+top_days_figure.update_layout(
+    height=max(450, number_of_top_days * 42),
+    legend_title_text="Technician",
+    xaxis_title="Number of Approvals",
+    yaxis_title="Approval Date"
+)
+
+st.plotly_chart(
+    top_days_figure,
+    use_container_width=True
+)
+
+# ============================================================
+# 10. TOP APPROVAL DAYS SUMMARY TABLE
+# ============================================================
+
+top_days_table = daily_totals.copy()
+
+top_days_table.insert(
+    0,
+    "Rank",
+    range(1, len(top_days_table) + 1)
+)
+
+top_days_table["Approval Day"] = (
+    top_days_table["Approval Day"].dt.strftime("%B %d, %Y")
+)
+
+top_days_table = top_days_table.rename(
+    columns={
+        "Approval Day": "Approval Date",
+        "Approvals": "Total Approvals"
+    }
+)
+
+st.subheader("Ranked Approval-Day Summary")
+
+st.dataframe(
+    top_days_table,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Rank": st.column_config.NumberColumn(format="%d"),
+        "Total Approvals": st.column_config.NumberColumn(format="%d")
+    }
+)
+
+st.caption(
+    "When multiple technicians are selected, the bars show each "
+    "technician's contribution to the total approval volume for that day."
+)

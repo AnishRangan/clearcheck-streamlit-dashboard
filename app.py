@@ -657,22 +657,31 @@ if filtered_blocks.empty:
     )
 
 else:
-    # Calculate block-level dashboard metrics.
+    # Calculate overall block-level KPIs.
     selected_block_count = len(filtered_blocks)
 
+    total_block_approvals = (
+        filtered_blocks["Cases_In_Block"].sum()
+    )
+
     average_cases_per_block = (
-        filtered_blocks["Cases_Per_Block"].mean()
+        filtered_blocks["Cases_In_Block"].mean()
     )
 
     largest_block = (
-        filtered_blocks["Cases_Per_Block"].max()
+        filtered_blocks["Cases_In_Block"].max()
     )
 
-    median_observed_seconds = (
-        filtered_blocks["Observed_Sec_Per_Case"].median()
+    # Weighted observed time per case:
+    # total time inside all blocks divided by total approvals.
+    weighted_observed_seconds = (
+        filtered_blocks["Block_Duration_Seconds"].sum()
+        / total_block_approvals
+        if total_block_approvals > 0
+        else np.nan
     )
 
-    # Display the block KPIs.
+    # Display the principal block KPIs.
     block_kpi_1, block_kpi_2, block_kpi_3, block_kpi_4 = st.columns(4)
 
     block_kpi_1.metric(
@@ -691,9 +700,16 @@ else:
     )
 
     block_kpi_4.metric(
-        "Median Observed Time per Case",
-        f"{median_observed_seconds:,.2f} sec"
+        "Observed Seconds per Case",
+        f"{weighted_observed_seconds:,.2f} sec"
     )
+
+    st.caption(
+        f"The current selection contains "
+        f"{total_block_approvals:,.0f} approvals organized into "
+        f"{selected_block_count:,} blocks."
+    )
+
 
     # ========================================================
     # 12. TECHNICIAN BLOCK SUMMARY
@@ -705,37 +721,80 @@ else:
         filtered_blocks
         .groupby("PROVIDER_APPROVING_NAME")
         .agg(
-            Approval_Blocks=("Cases_Per_Block", "size"),
-            Total_Approvals=("Cases_Per_Block", "sum"),
-            Average_Cases_Per_Block=("Cases_Per_Block", "mean"),
-            Median_Cases_Per_Block=("Cases_Per_Block", "median"),
-            Largest_Block=("Cases_Per_Block", "max"),
-            Median_Observed_Sec_Per_Case=(
-                "Observed_Sec_Per_Case",
-                "median"
+            Approval_Blocks=("BLOCK_ID", "nunique"),
+            Active_Days=(
+                "Block_Start",
+                lambda values: values.dt.normalize().nunique()
             ),
-            Blocks_Under_60_Sec_Per_Case=(
-                "Observed_Sec_Per_Case",
-                lambda values: (
-                    (values < 60).mean() * 100
-                )
+            Total_Approvals=("Cases_In_Block", "sum"),
+            Average_Cases_Per_Block=("Cases_In_Block", "mean"),
+            Median_Cases_Per_Block=("Cases_In_Block", "median"),
+            Largest_Block=("Cases_In_Block", "max"),
+            Total_Block_Duration_Seconds=(
+                "Block_Duration_Seconds",
+                "sum"
+            ),
+            Average_Fast_Under_10_Ratio=(
+                "Fast_Under_10_Ratio",
+                "mean"
+            ),
+            Median_Potential_PreReview_Seconds=(
+                "Potential_PreReview_Seconds_Per_Case",
+                "median"
             )
         )
         .reset_index()
     )
 
-    technician_block_summary = technician_block_summary.rename(
+    # Calculate block frequency.
+    technician_block_summary["Blocks_Per_Active_Day"] = (
+        technician_block_summary["Approval_Blocks"]
+        / technician_block_summary["Active_Days"]
+    )
+
+    # Calculate weighted observed seconds per case.
+    technician_block_summary["Observed_Seconds_Per_Case"] = (
+        technician_block_summary["Total_Block_Duration_Seconds"]
+        / technician_block_summary["Total_Approvals"]
+    )
+
+    # Convert the fast ratio from a decimal to a percentage.
+    technician_block_summary["Fast_Under_10_Percent"] = (
+        technician_block_summary["Average_Fast_Under_10_Ratio"]
+        * 100
+    )
+
+    # Select and rename the columns displayed on the dashboard.
+    technician_block_summary = technician_block_summary[
+        [
+            "PROVIDER_APPROVING_NAME",
+            "Approval_Blocks",
+            "Active_Days",
+            "Blocks_Per_Active_Day",
+            "Total_Approvals",
+            "Average_Cases_Per_Block",
+            "Median_Cases_Per_Block",
+            "Largest_Block",
+            "Observed_Seconds_Per_Case",
+            "Fast_Under_10_Percent",
+            "Median_Potential_PreReview_Seconds"
+        ]
+    ].rename(
         columns={
             "PROVIDER_APPROVING_NAME": "Technician",
             "Approval_Blocks": "Approval Blocks",
+            "Active_Days": "Active Days",
+            "Blocks_Per_Active_Day": "Blocks per Active Day",
             "Total_Approvals": "Total Approvals",
             "Average_Cases_Per_Block": "Average Cases per Block",
             "Median_Cases_Per_Block": "Median Cases per Block",
             "Largest_Block": "Largest Block",
-            "Median_Observed_Sec_Per_Case":
-                "Median Observed Seconds per Case",
-            "Blocks_Under_60_Sec_Per_Case":
-                "Blocks Under 60 Seconds per Case (%)"
+            "Observed_Seconds_Per_Case":
+                "Observed Seconds per Case",
+            "Fast_Under_10_Percent":
+                "Fast Under 10 Seconds (%)",
+            "Median_Potential_PreReview_Seconds":
+                "Median Potential Pre-Review Seconds per Case"
         }
     )
 
@@ -744,27 +803,32 @@ else:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Approval Blocks": st.column_config.NumberColumn(
-                format="%d"
-            ),
-            "Total Approvals": st.column_config.NumberColumn(
-                format="%d"
-            ),
+            "Approval Blocks":
+                st.column_config.NumberColumn(format="%d"),
+            "Active Days":
+                st.column_config.NumberColumn(format="%d"),
+            "Blocks per Active Day":
+                st.column_config.NumberColumn(format="%.2f"),
+            "Total Approvals":
+                st.column_config.NumberColumn(format="%d"),
             "Average Cases per Block":
                 st.column_config.NumberColumn(format="%.2f"),
             "Median Cases per Block":
                 st.column_config.NumberColumn(format="%.2f"),
             "Largest Block":
                 st.column_config.NumberColumn(format="%d"),
-            "Median Observed Seconds per Case":
+            "Observed Seconds per Case":
                 st.column_config.NumberColumn(format="%.2f"),
-            "Blocks Under 60 Seconds per Case (%)":
-                st.column_config.NumberColumn(format="%.2f%%")
+            "Fast Under 10 Seconds (%)":
+                st.column_config.NumberColumn(format="%.2f%%"),
+            "Median Potential Pre-Review Seconds per Case":
+                st.column_config.NumberColumn(format="%.2f")
         }
     )
 
+
     # ========================================================
-    # 13. LARGEST APPROVAL BLOCKS VISUALIZATION
+    # 13. LARGEST APPROVAL BLOCKS
     # ========================================================
 
     st.subheader("Largest Approval Blocks")
@@ -782,14 +846,16 @@ else:
         filtered_blocks
         .nlargest(
             number_of_blocks_to_show,
-            "Cases_Per_Block"
+            "Cases_In_Block"
         )
         .copy()
     )
 
-    # Create a readable label for each block.
+    # Create a readable block label.
     largest_blocks["Block Label"] = (
         largest_blocks["PROVIDER_APPROVING_NAME"]
+        + " | Block "
+        + largest_blocks["BLOCK_ID"].astype(str)
         + " | "
         + largest_blocks["Block_Start"].dt.strftime(
             "%Y-%m-%d %H:%M"
@@ -798,7 +864,7 @@ else:
 
     largest_blocks_figure = px.bar(
         largest_blocks,
-        x="Cases_Per_Block",
+        x="Cases_In_Block",
         y="Block Label",
         color="PROVIDER_APPROVING_NAME",
         orientation="h",
@@ -806,15 +872,18 @@ else:
             f"Largest {number_of_blocks_to_show} Approval Blocks"
         ),
         labels={
-            "Cases_Per_Block": "Cases Approved in Block",
+            "Cases_In_Block": "Cases Approved in Block",
             "Block Label": "Approval Block",
             "PROVIDER_APPROVING_NAME": "Technician"
         },
         hover_data={
+            "BLOCK_ID": True,
             "Block_Start": True,
             "Block_End": True,
-            "Block_Duration_Sec": ":,.0f",
-            "Observed_Sec_Per_Case": ":,.2f",
+            "Block_Duration_Minutes": ":,.2f",
+            "Observed_Seconds_Per_Case": ":,.2f",
+            "Fast_Under_10_Ratio": ":.2%",
+            "Potential_PreReview_Seconds_Per_Case": ":,.2f",
             "Block Label": False
         },
         color_discrete_map={
@@ -832,7 +901,7 @@ else:
     largest_blocks_figure.update_layout(
         height=max(
             500,
-            number_of_blocks_to_show * 35
+            number_of_blocks_to_show * 38
         ),
         legend_title_text="Technician",
         xaxis_title="Number of Cases",
@@ -844,8 +913,9 @@ else:
         use_container_width=True
     )
 
-     # ========================================================
-    # 14. BLOCK-DETAIL TABLE
+
+    # ========================================================
+    # 14. LARGEST-BLOCK DETAIL TABLE
     # ========================================================
 
     st.subheader("Largest Block Details")
@@ -853,31 +923,36 @@ else:
     block_detail_table = largest_blocks[
         [
             "PROVIDER_APPROVING_NAME",
+            "BLOCK_ID",
             "Block_Start",
             "Block_End",
-            "Cases_Per_Block",
-            "Block_Duration_Sec",
-            "Observed_Sec_Per_Case"
+            "Cases_In_Block",
+            "Block_Duration_Minutes",
+            "Observed_Seconds_Per_Case",
+            "Fast_Under_10_Ratio",
+            "Potential_PreReview_Seconds_Per_Case"
         ]
     ].copy()
 
-    block_detail_table["Block Duration (Minutes)"] = (
-        block_detail_table["Block_Duration_Sec"] / 60
+    block_detail_table["Fast_Under_10_Ratio"] = (
+        block_detail_table["Fast_Under_10_Ratio"] * 100
     )
 
     block_detail_table = block_detail_table.rename(
         columns={
             "PROVIDER_APPROVING_NAME": "Technician",
+            "BLOCK_ID": "Block ID",
             "Block_Start": "Block Start",
             "Block_End": "Block End",
-            "Cases_Per_Block": "Cases per Block",
-            "Observed_Sec_Per_Case":
-                "Observed Seconds per Case"
+            "Cases_In_Block": "Cases in Block",
+            "Block_Duration_Minutes": "Block Duration (Minutes)",
+            "Observed_Seconds_Per_Case":
+                "Observed Seconds per Case",
+            "Fast_Under_10_Ratio":
+                "Fast Under 10 Seconds (%)",
+            "Potential_PreReview_Seconds_Per_Case":
+                "Potential Pre-Review Seconds per Case"
         }
-    )
-
-    block_detail_table = block_detail_table.drop(
-        columns=["Block_Duration_Sec"]
     )
 
     st.dataframe(
@@ -885,18 +960,32 @@ else:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Cases per Block":
+            "Block ID":
+                st.column_config.NumberColumn(format="%d"),
+            "Cases in Block":
                 st.column_config.NumberColumn(format="%d"),
             "Block Duration (Minutes)":
                 st.column_config.NumberColumn(format="%.2f"),
             "Observed Seconds per Case":
+                st.column_config.NumberColumn(format="%.2f"),
+            "Fast Under 10 Seconds (%)":
+                st.column_config.NumberColumn(format="%.2f%%"),
+            "Potential Pre-Review Seconds per Case":
                 st.column_config.NumberColumn(format="%.2f")
         }
     )
 
+
+    # ========================================================
+    # 15. BLOCK-ANALYSIS INTERPRETATION
+    # ========================================================
+
     st.info(
-        "Observed seconds per case is calculated from the time between "
-        "the first and last recorded approvals in a block. Very low "
-        "values indicate rapid approval activity, but timestamps do not "
-        "show whether cases were reviewed before the block began."
+        "Observed seconds per case measures approval activity occurring "
+        "between the first and last approvals in a block. Potential "
+        "pre-review seconds per case provides a generous estimate that "
+        "allocates the preceding inactive gap across the cases in the "
+        "block. Neither measure proves that a review occurred because "
+        "the data contain approval timestamps rather than case-opening "
+        "or review-start timestamps."
     )

@@ -637,3 +637,266 @@ st.caption(
     "When multiple technicians are selected, the bars show each "
     "technician's contribution to the total approval volume for that day."
 )
+# ============================================================
+# 11. APPROVAL-BLOCK ANALYSIS
+# ============================================================
+
+st.markdown("---")
+st.header("Approval-Block Analysis")
+
+st.write(
+    "A block represents a continuous approval session. A new block "
+    "begins whenever the gap between consecutive approvals is "
+    "10 minutes or more."
+)
+
+# Confirm that blocks remain after applying the dashboard filters.
+if filtered_blocks.empty:
+    st.warning(
+        "No approval blocks are available for the current filters."
+    )
+
+else:
+    # Calculate block-level dashboard metrics.
+    selected_block_count = len(filtered_blocks)
+
+    average_cases_per_block = (
+        filtered_blocks["Cases_Per_Block"].mean()
+    )
+
+    largest_block = (
+        filtered_blocks["Cases_Per_Block"].max()
+    )
+
+    median_observed_seconds = (
+        filtered_blocks["Observed_Sec_Per_Case"].median()
+    )
+
+    # Display the block KPIs.
+    block_kpi_1, block_kpi_2, block_kpi_3, block_kpi_4 = st.columns(4)
+
+    block_kpi_1.metric(
+        "Approval Blocks",
+        f"{selected_block_count:,}"
+    )
+
+    block_kpi_2.metric(
+        "Average Cases per Block",
+        f"{average_cases_per_block:,.2f}"
+    )
+
+    block_kpi_3.metric(
+        "Largest Block",
+        f"{largest_block:,.0f} cases"
+    )
+
+    block_kpi_4.metric(
+        "Median Observed Time per Case",
+        f"{median_observed_seconds:,.2f} sec"
+    )
+
+    # ========================================================
+    # 12. TECHNICIAN BLOCK SUMMARY
+    # ========================================================
+
+    st.subheader("Block Summary by Technician")
+
+    technician_block_summary = (
+        filtered_blocks
+        .groupby("PROVIDER_APPROVING_NAME")
+        .agg(
+            Approval_Blocks=("Cases_Per_Block", "size"),
+            Total_Approvals=("Cases_Per_Block", "sum"),
+            Average_Cases_Per_Block=("Cases_Per_Block", "mean"),
+            Median_Cases_Per_Block=("Cases_Per_Block", "median"),
+            Largest_Block=("Cases_Per_Block", "max"),
+            Median_Observed_Sec_Per_Case=(
+                "Observed_Sec_Per_Case",
+                "median"
+            ),
+            Blocks_Under_60_Sec_Per_Case=(
+                "Observed_Sec_Per_Case",
+                lambda values: (
+                    (values < 60).mean() * 100
+                )
+            )
+        )
+        .reset_index()
+    )
+
+    technician_block_summary = technician_block_summary.rename(
+        columns={
+            "PROVIDER_APPROVING_NAME": "Technician",
+            "Approval_Blocks": "Approval Blocks",
+            "Total_Approvals": "Total Approvals",
+            "Average_Cases_Per_Block": "Average Cases per Block",
+            "Median_Cases_Per_Block": "Median Cases per Block",
+            "Largest_Block": "Largest Block",
+            "Median_Observed_Sec_Per_Case":
+                "Median Observed Seconds per Case",
+            "Blocks_Under_60_Sec_Per_Case":
+                "Blocks Under 60 Seconds per Case (%)"
+        }
+    )
+
+    st.dataframe(
+        technician_block_summary,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Approval Blocks": st.column_config.NumberColumn(
+                format="%d"
+            ),
+            "Total Approvals": st.column_config.NumberColumn(
+                format="%d"
+            ),
+            "Average Cases per Block":
+                st.column_config.NumberColumn(format="%.2f"),
+            "Median Cases per Block":
+                st.column_config.NumberColumn(format="%.2f"),
+            "Largest Block":
+                st.column_config.NumberColumn(format="%d"),
+            "Median Observed Seconds per Case":
+                st.column_config.NumberColumn(format="%.2f"),
+            "Blocks Under 60 Seconds per Case (%)":
+                st.column_config.NumberColumn(format="%.2f%%")
+        }
+    )
+
+    # ========================================================
+    # 13. LARGEST APPROVAL BLOCKS VISUALIZATION
+    # ========================================================
+
+    st.subheader("Largest Approval Blocks")
+
+    number_of_blocks_to_show = st.sidebar.slider(
+        "Number of largest blocks",
+        min_value=5,
+        max_value=30,
+        value=15,
+        step=1
+    )
+
+    # Select the largest blocks under the current filters.
+    largest_blocks = (
+        filtered_blocks
+        .nlargest(
+            number_of_blocks_to_show,
+            "Cases_Per_Block"
+        )
+        .copy()
+    )
+
+    # Create a readable label for each block.
+    largest_blocks["Block Label"] = (
+        largest_blocks["PROVIDER_APPROVING_NAME"]
+        + " | "
+        + largest_blocks["Block_Start"].dt.strftime(
+            "%Y-%m-%d %H:%M"
+        )
+    )
+
+    largest_blocks_figure = px.bar(
+        largest_blocks,
+        x="Cases_Per_Block",
+        y="Block Label",
+        color="PROVIDER_APPROVING_NAME",
+        orientation="h",
+        title=(
+            f"Largest {number_of_blocks_to_show} Approval Blocks"
+        ),
+        labels={
+            "Cases_Per_Block": "Cases Approved in Block",
+            "Block Label": "Approval Block",
+            "PROVIDER_APPROVING_NAME": "Technician"
+        },
+        hover_data={
+            "Block_Start": True,
+            "Block_End": True,
+            "Block_Duration_Sec": ":,.0f",
+            "Observed_Sec_Per_Case": ":,.2f",
+            "Block Label": False
+        },
+        color_discrete_map={
+            "Gary Arnold": "#EF553B",
+            "Juan Mendez": "#636EFA",
+            "Matt Shawn": "#00CC96"
+        }
+    )
+
+    # Place the largest block at the top.
+    largest_blocks_figure.update_yaxes(
+        categoryorder="total ascending"
+    )
+
+    largest_blocks_figure.update_layout(
+        height=max(
+            500,
+            number_of_blocks_to_show * 35
+        ),
+        legend_title_text="Technician",
+        xaxis_title="Number of Cases",
+        yaxis_title=""
+    )
+
+    st.plotly_chart(
+        largest_blocks_figure,
+        use_container_width=True
+    )
+
+     # ========================================================
+    # 14. BLOCK-DETAIL TABLE
+    # ========================================================
+
+    st.subheader("Largest Block Details")
+
+    block_detail_table = largest_blocks[
+        [
+            "PROVIDER_APPROVING_NAME",
+            "Block_Start",
+            "Block_End",
+            "Cases_Per_Block",
+            "Block_Duration_Sec",
+            "Observed_Sec_Per_Case"
+        ]
+    ].copy()
+
+    block_detail_table["Block Duration (Minutes)"] = (
+        block_detail_table["Block_Duration_Sec"] / 60
+    )
+
+    block_detail_table = block_detail_table.rename(
+        columns={
+            "PROVIDER_APPROVING_NAME": "Technician",
+            "Block_Start": "Block Start",
+            "Block_End": "Block End",
+            "Cases_Per_Block": "Cases per Block",
+            "Observed_Sec_Per_Case":
+                "Observed Seconds per Case"
+        }
+    )
+
+    block_detail_table = block_detail_table.drop(
+        columns=["Block_Duration_Sec"]
+    )
+
+    st.dataframe(
+        block_detail_table,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Cases per Block":
+                st.column_config.NumberColumn(format="%d"),
+            "Block Duration (Minutes)":
+                st.column_config.NumberColumn(format="%.2f"),
+            "Observed Seconds per Case":
+                st.column_config.NumberColumn(format="%.2f")
+        }
+    )
+
+    st.info(
+        "Observed seconds per case is calculated from the time between "
+        "the first and last recorded approvals in a block. Very low "
+        "values indicate rapid approval activity, but timestamps do not "
+        "show whether cases were reviewed before the block began."
+    )

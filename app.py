@@ -1212,8 +1212,7 @@ st.subheader("Position on the Negligence Claim")
 
 st.markdown(
     """
-    **The analysis supports further investigation of the negligence
-    claim, but it does not independently prove legal negligence.**
+    **Our results raise serious concerns about Gary’s approval behavior. His typical approval gap was only four seconds, and more than three-quarters of his measurable approvals occurred within ten seconds of the previous approval. However, we cannot conclude from timestamps alone that he failed to review the cases because the data do not show when each review began.**
 
     The evidence supports the claim because:
 

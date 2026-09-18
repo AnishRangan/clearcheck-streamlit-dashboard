@@ -989,3 +989,175 @@ else:
         "the data contain approval timestamps rather than case-opening "
         "or review-start timestamps."
     )
+# ============================================================
+# 16. PAYOUT POLICY CHANGE
+# ============================================================
+
+st.markdown("---")
+st.header("Payout Policy Change")
+
+st.write(
+    "The payout decreased from $50 to $17 per approval in June 2020. "
+    "Gary Arnold is the only technician with records from both the "
+    "pre-policy and post-policy periods."
+)
+
+policy_change_date = pd.Timestamp("2020-06-01")
+
+# Use Gary's complete dataset for the policy comparison.
+gary_policy_data = approvals[
+    (approvals["PROVIDER_APPROVING_NAME"] == "Gary Arnold")
+    & approvals["APPROVAL_DURATION_SEC"].notna()
+    & (approvals["APPROVAL_DURATION_SEC"] >= 0)
+].copy()
+
+gary_policy_data["Policy Period"] = np.where(
+    gary_policy_data["APPROVAL_DATE"] < policy_change_date,
+    "Before June 2020 ($50)",
+    "June 2020 and After ($17)"
+)
+
+# Restrict the principal comparison to within-block intervals.
+# Gaps of 10 minutes or more represent new approval sessions.
+gary_within_block = gary_policy_data[
+    gary_policy_data["APPROVAL_DURATION_SEC"] < 600
+].copy()
+
+policy_summary = (
+    gary_within_block
+    .groupby("Policy Period")
+    .agg(
+        Approval_Intervals=("APPROVAL_DURATION_SEC", "size"),
+        Mean_Seconds=("APPROVAL_DURATION_SEC", "mean"),
+        Median_Seconds=("APPROVAL_DURATION_SEC", "median"),
+        Fast_Under_5_Percent=(
+            "APPROVAL_DURATION_SEC",
+            lambda values: (values < 5).mean() * 100
+        ),
+        Fast_Under_10_Percent=(
+            "APPROVAL_DURATION_SEC",
+            lambda values: (values < 10).mean() * 100
+        )
+    )
+    .reset_index()
+)
+
+policy_summary_display = policy_summary.rename(
+    columns={
+        "Policy Period": "Policy Period",
+        "Approval_Intervals": "Approval Intervals",
+        "Mean_Seconds": "Mean Seconds",
+        "Median_Seconds": "Median Seconds",
+        "Fast_Under_5_Percent": "Under 5 Seconds (%)",
+        "Fast_Under_10_Percent": "Under 10 Seconds (%)"
+    }
+)
+
+st.subheader("Before-and-After Summary")
+
+st.dataframe(
+    policy_summary_display,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Approval Intervals":
+            st.column_config.NumberColumn(format="%d"),
+        "Mean Seconds":
+            st.column_config.NumberColumn(format="%.2f"),
+        "Median Seconds":
+            st.column_config.NumberColumn(format="%.2f"),
+        "Under 5 Seconds (%)":
+            st.column_config.NumberColumn(format="%.2f%%"),
+        "Under 10 Seconds (%)":
+            st.column_config.NumberColumn(format="%.2f%%")
+    }
+)
+# ============================================================
+# 17. PAYOUT POLICY VISUALIZATIONS
+# ============================================================
+
+policy_chart_1, policy_chart_2 = st.columns(2)
+
+with policy_chart_1:
+    median_policy_figure = px.bar(
+        policy_summary,
+        x="Policy Period",
+        y="Median_Seconds",
+        color="Policy Period",
+        title="Median Approval Gap",
+        labels={
+            "Policy Period": "",
+            "Median_Seconds": "Median Seconds"
+        },
+        color_discrete_map={
+            "Before June 2020 ($50)": "#636EFA",
+            "June 2020 and After ($17)": "#EF553B"
+        }
+    )
+
+    median_policy_figure.update_layout(
+        showlegend=False
+    )
+
+    st.plotly_chart(
+        median_policy_figure,
+        use_container_width=True
+    )
+
+with policy_chart_2:
+    fast_policy_figure = px.bar(
+        policy_summary,
+        x="Policy Period",
+        y="Fast_Under_10_Percent",
+        color="Policy Period",
+        title="Approvals Under 10 Seconds",
+        labels={
+            "Policy Period": "",
+            "Fast_Under_10_Percent":
+                "Approvals Under 10 Seconds (%)"
+        },
+        color_discrete_map={
+            "Before June 2020 ($50)": "#636EFA",
+            "June 2020 and After ($17)": "#EF553B"
+        }
+    )
+
+    fast_policy_figure.update_layout(
+        showlegend=False
+    )
+
+    st.plotly_chart(
+        fast_policy_figure,
+        use_container_width=True
+    )
+# ============================================================
+# 18. PAYOUT T-TEST RESULTS
+# ============================================================
+
+st.subheader("Payout Policy T-Test Results")
+
+st.write(
+    "The two-sample Welch t-test evaluates whether Gary's mean "
+    "approval duration changed after the payout reduction."
+)
+
+st.dataframe(
+    payout_tests,
+    use_container_width=True,
+    hide_index=True
+)
+
+st.info(
+    "For within-block approval intervals, the before-and-after "
+    "difference is statistically significant, but the effect size is "
+    "very small. Gary's median gap decreased from approximately "
+    "5 seconds before the policy change to 4 seconds afterward, while "
+    "the percentage of rapid approvals increased. This does not show "
+    "that the lower payout improved review behavior."
+)
+
+st.warning(
+    "The policy change occurred during a substantial gap in Gary's "
+    "records. Therefore, the analysis identifies an association rather "
+    "than proving that the payout reduction caused the behavioral change."
+)
